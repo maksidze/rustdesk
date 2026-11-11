@@ -6,6 +6,7 @@ import 'package:bot_toast/bot_toast.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' hide TabBarTheme;
+import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/pages/remote_page.dart';
@@ -1319,6 +1320,55 @@ class _ActionIconState extends State<ActionIcon> {
       ),
     );
   }
+}
+
+class AlwaysOnTopButton extends StatefulWidget {
+  const AlwaysOnTopButton({super.key});
+
+  @override
+  State<AlwaysOnTopButton> createState() => _AlwaysOnTopButtonState();
+}
+
+class _AlwaysOnTopButtonState extends State<AlwaysOnTopButton> {
+  static const _channel =
+      MethodChannel('org.rustdesk.rustdesk/desktop_controls');
+  bool _pinned = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    try {
+      final pinned = await _channel.invokeMethod<bool>('isAlwaysOnTop') ?? false;
+      if (mounted) setState(() => _pinned = pinned);
+    } catch (e) {
+      debugPrint('Cannot read the always-on-top state: $e');
+    }
+  }
+
+  Future<void> _toggle() async {
+    try {
+      final pinned = await _channel.invokeMethod<bool>('isAlwaysOnTop') ?? false;
+      await _channel.invokeMethod<void>('setAlwaysOnTop', !pinned);
+      await _refresh();
+    } catch (e) {
+      debugPrint('Cannot change the always-on-top state: $e');
+      showToast(translate('Failed'));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        toggled: _pinned,
+        child: ActionIcon(
+          message: 'Always on top',
+          icon: _pinned ? Icons.push_pin : Icons.push_pin_outlined,
+          onTap: _toggle,
+        ),
+      );
 }
 
 class AddButton extends StatelessWidget {

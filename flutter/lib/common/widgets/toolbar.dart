@@ -937,6 +937,20 @@ Future<List<TToggleMenu>> toolbarCursor(
   final pi = ffiModel.pi;
   final sessionId = ffi.sessionId;
 
+  if (isDesktop && !isWeb) {
+    v.add(TToggleMenu(
+        child: Text(translate('Always use standard cursors')),
+        value: ffi.cursorModel.useStandardCursors,
+        onChanged: (value) async {
+          if (value == null) return;
+          await bind.sessionSetFlutterOption(
+              sessionId: sessionId,
+              k: kKeyUseStandardCursors,
+              v: value ? 'Y' : 'N');
+          ffi.cursorModel.useStandardCursors = value;
+        }));
+  }
+
   // show remote cursor
   if (pi.platform != kPeerPlatformAndroid &&
       !ffi.canvasModel.cursorEmbedded &&
@@ -1375,6 +1389,14 @@ List<TToggleMenu> toolbarKeyboardToggles(FFI ffi) {
           }
         },
         child: Text(translate('Relative mouse mode'))));
+    v.add(TToggleMenu(
+        value: ffi.inputModel.showRelativeMouseCursor.value,
+        onChanged: (value) {
+          if (value != null) {
+            ffi.inputModel.showRelativeMouseCursor.value = value;
+          }
+        },
+        child: Text(translate('Show cursor in relative mouse mode'))));
   }
 
   // reverse mouse wheel

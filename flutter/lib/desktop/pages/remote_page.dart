@@ -23,6 +23,8 @@ import '../../utils/image.dart';
 import '../widgets/remote_toolbar.dart';
 import '../widgets/kb_layout_type_chooser.dart';
 import '../widgets/tabbar_widget.dart';
+import '../widgets/relative_mouse_cursor.dart';
+import '../widgets/standard_cursor.dart';
 import 'macos_full_screen_focus_recovery.dart';
 
 import 'package:flutter_hbb/native/custom_cursor.dart'
@@ -203,6 +205,10 @@ class _RemotePageState extends State<RemotePage>
           sessionId: sessionId, arg: 'show-remote-cursor');
       _zoomCursor.value = bind.sessionGetToggleOptionSync(
           sessionId: sessionId, arg: kOptionZoomCursor);
+      bind.sessionGetFlutterOption(sessionId: sessionId, k: kKeyUseStandardCursors)
+          .then((value) {
+        if (mounted) _ffi.cursorModel.useStandardCursors = value == 'Y';
+      });
     });
     DesktopMultiWindow.addListener(this);
     // if (!_isCustomCursorInited) {
@@ -994,13 +1000,21 @@ class _RemotePageState extends State<RemotePage>
 
     if (!_ffi.canvasModel.cursorEmbedded) {
       paints
-          .add(Obx(() => _showRemoteCursor.isFalse || _remoteCursorMoved.isFalse
+          .add(Obx(() => _ffi.inputModel.relativeMouseMode.value ||
+                  _showRemoteCursor.isFalse || _remoteCursorMoved.isFalse
               ? Offstage()
               : CursorPaint(
                   id: widget.id,
                   zoomCursor: _zoomCursor,
                 )));
     }
+    paints.add(Positioned.fill(
+        child: Consumer<CursorModel>(builder: (_, cursorModel, __) =>
+            Obx(() => _ffi.inputModel.relativeMouseMode.value &&
+                _ffi.inputModel.showRelativeMouseCursor.value &&
+                (!_ffi.canvasModel.cursorEmbedded || cursorModel.useStandardCursors)
+            ? RelativeMouseCursor(id: widget.id, zoomCursor: _zoomCursor)
+            : const Offstage()))));
     paints.add(
       Positioned(
         top: 10,
@@ -1068,6 +1082,11 @@ class _ViewStyleUpdaterState extends State<_ViewStyleUpdater> {
               if (mounted && currentSize != null) {
                 widget.canvasModel.updateViewStyle();
                 widget.inputModel.updateImageWidgetSize(currentSize);
+                final box = context.findRenderObject();
+                if (box is RenderBox) {
+                  widget.inputModel
+                      .updateWindowsPointerRegion(box.localToGlobal(Offset.zero));
+                }
               }
             });
           }
@@ -1116,6 +1135,7 @@ class _ImagePaintState extends State<ImagePaint> {
   @override
   Widget build(BuildContext context) {
     final m = Provider.of<ImageModel>(context);
+    final cursorModel = Provider.of<CursorModel>(context);
     var c = Provider.of<CanvasModel>(context);
     final s = c.scale;
     // Read the live DPR while the canvas's post-frame update is pending.
@@ -1135,7 +1155,10 @@ class _ImagePaintState extends State<ImagePaint> {
 
           return MouseRegion(
               cursor: cursorOverImage.isTrue
-                  ? c.cursorEmbedded
+                  ? cursorModel.useStandardCursors &&
+                          !widget.ffi.inputModel.relativeMouseMode.value
+                      ? standardSystemCursor(cursorModel.standardKind)
+                      : c.cursorEmbedded
                       ? SystemMouseCursors.none
                       // Hide cursor when relative mouse mode is active
                       : widget.ffi.inputModel.relativeMouseMode.value
@@ -1493,6 +1516,13 @@ class CursorPaint extends StatelessWidget {
 
     double x = (m.x - hotx) * c.scale + cx;
     double y = (m.y - hoty) * c.scale + cy;
+    if (m.useStandardCursors) {
+      return CustomPaint(painter: StandardCursorPainter(
+          kind: m.standardKind,
+          position: Offset(m.x * c.scale + cx, m.y * c.scale + cy),
+          scale: zoomCursor.value || c.viewStyle.style == kRemoteViewStyleOriginal
+              ? c.scale : 1.0));
+    }
     double scale = 1.0;
     final isViewOriginal = c.viewStyle.style == kRemoteViewStyleOriginal;
     if (zoomCursor.value || isViewOriginal) {

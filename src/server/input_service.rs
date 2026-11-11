@@ -369,7 +369,7 @@ fn run_pos(sp: EmptyExtraFieldService, state: &mut StatePos) -> ResultType<()> {
         let exclude = {
             let now = get_time();
             let lock = LATEST_PEER_INPUT_CURSOR.lock().unwrap();
-            if now - lock.time < 300 {
+            if now - lock.time < 300 && !is_relative_mouse_active(lock.conn) {
                 lock.conn
             } else {
                 0
@@ -2732,6 +2732,36 @@ lazy_static::lazy_static! {
 #[cfg(test)]
 mod cursor_shape_tests {
     use super::*;
+
+    #[test]
+    fn relative_controller_receives_actual_cursor_position() {
+        let (tx, mut rx) = hbb_common::tokio::sync::mpsc::unbounded_channel();
+        let service = EmptyExtraFieldService::new("relative_cursor_test".to_owned(), false);
+        let conn = -901;
+        service.on_subscribe(ConnInner::new(conn, Some(tx), None));
+        let previous_input = *LATEST_PEER_INPUT_CURSOR.lock().unwrap();
+        let previous_position = *LATEST_SYS_CURSOR_POS.lock().unwrap();
+        *LATEST_PEER_INPUT_CURSOR.lock().unwrap() = Input {
+            conn,
+            time: get_time(),
+            x: 123,
+            y: 456,
+        };
+        update_last_cursor_pos(123, 456);
+        set_relative_mouse_active(conn, true);
+        let mut state = StatePos { cursor_pos: (122, 456) };
+        run_pos(service.clone(), &mut state).unwrap();
+        let (_, msg) = rx.try_recv().unwrap();
+        assert_eq!((msg.cursor_position().x, msg.cursor_position().y), (123, 456));
+
+        set_relative_mouse_active(conn, false);
+        update_last_cursor_pos(124, 456);
+        update_latest_input_cursor_time(conn);
+        run_pos(service, &mut state).unwrap();
+        assert!(rx.try_recv().is_err());
+        *LATEST_PEER_INPUT_CURSOR.lock().unwrap() = previous_input;
+        *LATEST_SYS_CURSOR_POS.lock().unwrap() = previous_position;
+    }
 
     fn shape(id: u64) -> Arc<Message> {
         let mut msg = Message::new();

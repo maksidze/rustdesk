@@ -823,5 +823,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Please select Android → media.", "請選擇 Android → media。"),
         ("Trust duration (days)", "信任有效期（天）"),
         ("Renew trust", "延長信任期限"),
+        ("Always on top", ""),
+        ("Show cursor in relative mouse mode", ""),
+        ("Always use standard cursors", ""),
     ].iter().cloned().collect();
 }

@@ -353,8 +353,14 @@ class FfiModel with ChangeNotifier {
       } else if (name == 'cursor_id') {
         updateLastCursorId(evt);
         handleCursorId(evt);
+      } else if (name == 'cursor_standard_kind') {
+        parent.target?.cursorModel.standardKind = evt['kind'] ?? '';
       } else if (name == 'cursor_position') {
-        await parent.target?.cursorModel.updateCursorPosition(evt, peerId);
+        if (parent.target?.inputModel.relativeMouseMode.value == true) {
+          parent.target?.cursorModel.updateRelativeCursorPosition(evt);
+        } else {
+          await parent.target?.cursorModel.updateCursorPosition(evt, peerId);
+        }
       } else if (name == 'clipboard') {
         Clipboard.setData(ClipboardData(text: evt['content']));
       } else if (name == 'permission') {
@@ -1654,6 +1660,7 @@ class FfiModel with ChangeNotifier {
   }
 
   handleCursorId(Map<String, dynamic> evt) {
+    parent.target?.cursorModel.standardKind = evt['standard_kind'] ?? '';
     cachedPeerData.lastCursorId = evt;
     parent.target?.cursorModel.updateCursorId(evt);
   }
@@ -1662,7 +1669,10 @@ class FfiModel with ChangeNotifier {
   handleCursorData(String id, int hotx, int hoty, int width, int height,
       Uint8List colors) async {
     // The replay selects this last, whatever the order the shapes are replayed in.
-    cachedPeerData.lastCursorId = {'id': id};
+    cachedPeerData.lastCursorId = {
+      'id': id,
+      'standard_kind': parent.target?.cursorModel.standardKind ?? '',
+    };
     parent.target?.cursorModel.id = id;
     await parent.target?.cursorModel
         .updateCursorData(id, hotx, hoty, width, height, colors);
@@ -3097,6 +3107,15 @@ class PredefinedCursor {
 }
 
 class CursorModel with ChangeNotifier {
+  String standardKind = '';
+  bool _useStandardCursors = false;
+  bool get useStandardCursors => _useStandardCursors;
+  set useStandardCursors(bool value) {
+    if (_useStandardCursors == value) return;
+    _useStandardCursors = value;
+    notifyListeners();
+  }
+
   ui.Image? _image;
   final _images = <String, Tuple3<ui.Image, double, double>>{};
   CursorData? _cache;
@@ -3808,6 +3827,12 @@ class CursorModel with ChangeNotifier {
     if (!_updateCurData()) {
       restorePixels(_id);
     }
+  }
+
+  void updateRelativeCursorPosition(Map<String, dynamic> evt) {
+    _x = double.parse(evt['x']);
+    _y = double.parse(evt['y']);
+    notifyListeners();
   }
 
   /// Update the cursor position.

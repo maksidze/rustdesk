@@ -3005,6 +3005,7 @@ impl<T: InvokeUiSession> Remote<T> {
 fn cursor_shape(id: u64, cd: &CursorData, compressed: &[u8]) -> CursorData {
     CursorData {
         id,
+        standard_kind: cd.standard_kind.clone(),
         hotx: cd.hotx,
         hoty: cd.hoty,
         width: cd.width,

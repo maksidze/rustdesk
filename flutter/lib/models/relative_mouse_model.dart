@@ -42,6 +42,58 @@ class RelativeMouseModel {
 
   final RelativeMouseAccumulator _accumulator = RelativeMouseAccumulator();
 
+  static const _windowsChannel =
+      MethodChannel('org.rustdesk.rustdesk/desktop_controls');
+  static RelativeMouseModel? _windowsModel;
+
+  Map<String, double> _windowsCenter() {
+    final center = _imageWidgetSize != null
+        ? (_pointerRegionTopLeftGlobal ?? Offset.zero) +
+            Offset(_imageWidgetSize!.width / 2, _imageWidgetSize!.height / 2)
+        : null;
+    return center == null ? {} : {'x': center.dx, 'y': center.dy};
+  }
+
+  Future<void> _enableWindowsRelativeMouseMode(int requestId) async {
+    if (_windowsModel != null && _windowsModel != this) return;
+    _windowsModel = this;
+    _windowsChannel.setMethodCallHandler((call) async {
+      final model = _windowsModel;
+      if (call.method == 'mouseDelta' && model?.enabled.value == true) {
+        final args = call.arguments as Map;
+        model!.sendRelativeMouseMove(
+            (args['dx'] as int).toDouble(), (args['dy'] as int).toDouble());
+      } else if (call.method == 'relativeMouseStopped') {
+        model?._disableWithCleanup();
+      }
+    });
+    try {
+      final success = await _windowsChannel.invokeMethod<bool>(
+          'enableRelativeMouse', _windowsCenter());
+      if (_disposed || _enableRequestId != requestId) return;
+      if (success == true) {
+        _completeEnableRelativeMouseMode();
+      } else {
+        _disableWithCleanup();
+        showToast(translate('rel-mouse-lock-failed-tip'));
+      }
+    } catch (e) {
+      debugPrint('[RelMouse] Windows pointer lock failed: $e');
+      _disableWithCleanup();
+      showToast(translate('rel-mouse-lock-failed-tip'));
+    }
+  }
+
+  Future<void> _disableWindowsRelativeMouseMode() async {
+    if (_windowsModel != this) return;
+    _windowsModel = null;
+    try {
+      await _windowsChannel.invokeMethod<void>('disableRelativeMouse');
+    } catch (e) {
+      debugPrint('[RelMouse] Windows pointer release failed: $e');
+    }
+  }
+
   // Native relative mouse mode support (macOS only)
   // Uses CGAssociateMouseAndMouseCursorPosition to lock cursor and NSEvent monitor for raw delta.
   static MethodChannel? _hostChannel;
@@ -217,6 +269,12 @@ class RelativeMouseModel {
     _pointerRegionTopLeftGlobal = e.position - e.localPosition;
   }
 
+  void updateWindowsPointerRegion(Offset origin) {
+    if (!isWindows) return;
+    _pointerRegionTopLeftGlobal = origin;
+    if (enabled.value) updatePointerLockCenter();
+  }
+
   /// Shared helper for handling exit shortcut for relative mouse mode.
   /// Returns true if the event was handled and should not be forwarded.
   ///
@@ -313,6 +371,7 @@ class RelativeMouseModel {
 
     // Keep the shared pointer-in-image flag in sync.
     setPointerInsideImage(enter);
+    if (isWindows) return;
 
     // macOS native mode: cursor is locked by CGAssociateMouseAndMouseCursorPosition,
     // no need for recenter logic.
@@ -334,6 +393,11 @@ class RelativeMouseModel {
 
   void onWindowBlur() {
     if (!enabled.value) return;
+
+    if (isWindows) {
+      _disableWithCleanup();
+      return;
+    }
 
     // Focus can change while the pointer is outside the window (e.g. taskbar activation).
     // Do not rely on the previous "pointer inside" state across focus boundaries.
@@ -407,6 +471,10 @@ class RelativeMouseModel {
       try {
         if (isDesktop) {
           final requestId = ++_enableRequestId;
+          if (isWindows) {
+            _enableWindowsRelativeMouseMode(requestId);
+            return true;
+          }
           if (isMacOS) {
             // macOS: Use native relative mouse mode with CGAssociateMouseAndMouseCursorPosition
             // This locks the cursor in place and provides raw delta via NSEvent monitor.
@@ -455,6 +523,7 @@ class RelativeMouseModel {
       _sendMouseMessageToSession(
         {
           'relative_mouse_mode': '0',
+          if (isDesktop && enabled.value) 'request_cursor_position': '0',
         },
         disableRelativeOnError: false,
         bypassKeyboardPerm: true,
@@ -496,6 +565,7 @@ class RelativeMouseModel {
     _sendMouseMessageToSession(
       {
         'relative_mouse_mode': '1',
+        if (isDesktop) 'request_cursor_position': '1',
         'type': 'move_relative',
         'x': '0',
         'y': '0',
@@ -514,6 +584,8 @@ class RelativeMouseModel {
   /// Returns true if the event was handled in relative mode, false otherwise.
   bool handleRelativeMouseMove(Offset localPosition) {
     if (!enabled.value) return false;
+
+    if (isWindows) return true;
 
     // macOS: Native mode handles delta via callback, skip Flutter-based handling.
     if (_isNativeRelativeMouseModeActive) {
@@ -605,7 +677,7 @@ class RelativeMouseModel {
 
     // Only recenter when mouse is near the edge of the image widget.
     // This allows smooth mouse movement without constant recentering.
-    _recenterIfNearEdge();
+    if (!isWindows) _recenterIfNearEdge();
   }
 
   // Edge threshold parameters for recenter detection.
@@ -767,6 +839,17 @@ class RelativeMouseModel {
   Future<void> updatePointerLockCenter({Offset? localCenter}) async {
     if (!isDesktop) return;
 
+    if (isWindows && _windowsModel == this) {
+      try {
+        await _windowsChannel.invokeMethod<void>(
+            'updateRelativeMouseCenter', _windowsCenter());
+      } catch (e) {
+        debugPrint('[RelMouse] Windows pointer center update failed: $e');
+        _disableWithCleanup();
+      }
+      return;
+    }
+
     // Null safety check for kWindowId.
     if (kWindowId == null) {
       if (enabled.value) {
@@ -893,6 +976,7 @@ class RelativeMouseModel {
   void _ensurePointerLockEngaged() {
     if (!enabled.value) return;
     if (!isDesktop) return;
+    if (isWindows) return;
 
     setPointerInsideImage(true);
 
@@ -969,6 +1053,10 @@ class RelativeMouseModel {
   }
 
   void _releaseCursorClip() {
+    if (isWindows && _windowsModel == this) {
+      ++_enableRequestId;
+      _disableWindowsRelativeMouseMode();
+    }
     if (!_cursorClipApplied) return;
     _cursorClipApplied = false;
     if (!isWindows) return;
@@ -1005,7 +1093,7 @@ class RelativeMouseModel {
     _accumulator.reset();
     _pointerLockCenterLocal = null;
     _pointerLockCenterScreen = null;
-    _pointerRegionTopLeftGlobal = null;
+    if (!isWindows) _pointerRegionTopLeftGlobal = null;
     _lastPointerLocalPos = null;
     _skipNextMouseMove = false;
     setPointerInsideImage(false);
@@ -1021,6 +1109,7 @@ class RelativeMouseModel {
     _sendMouseMessageToSession(
       {
         'relative_mouse_mode': '0',
+        if (isDesktop && enabled.value) 'request_cursor_position': '0',
       },
       disableRelativeOnError: false,
       bypassKeyboardPerm: true,

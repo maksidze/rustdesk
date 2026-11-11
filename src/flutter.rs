@@ -32,6 +32,26 @@ use std::{
 /// tag "main" for [Desktop Main Page] and [Mobile (Client and Server)] (the mobile don't need multiple windows, only one global event stream is needed)
 /// tag "cm" only for [Desktop CM Page]
 pub(crate) const APP_TYPE_MAIN: &str = "main";
+
+pub(super) fn request_relative_cursor_position(session_id: SessionID, active: bool) {
+    if let Some(session) = sessions::get_session_by_session_id(&session_id) {
+        let show = active
+            || session.get_toggle_option("show-remote-cursor".to_owned())
+            || session.get_toggle_option("view-only".to_owned());
+        let mut misc = Misc::new();
+        misc.set_option(OptionMessage {
+            show_remote_cursor: (if show {
+                option_message::BoolOption::Yes
+            } else {
+                option_message::BoolOption::No
+            }).into(),
+            ..Default::default()
+        });
+        let mut msg = Message::new();
+        msg.set_misc(misc);
+        session.send(Data::Message(msg));
+    }
+}
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub(crate) const APP_TYPE_CM: &str = "cm";
 #[cfg(any(target_os = "android", target_os = "ios"))]
@@ -673,6 +693,7 @@ impl FlutterHandler {
 impl InvokeUiSession for FlutterHandler {
     // On the event stream, so that it keeps its order with the cursor_id events around it.
     fn set_cursor_data(&self, cd: CursorData) {
+        self.push_event("cursor_standard_kind", &[("kind", &cd.standard_kind)], &[]);
         let colors = cd.colors.to_vec();
         for session in self.session_handlers.read().unwrap().values() {
             if let Some(stream) = &session.event_stream {
@@ -689,7 +710,14 @@ impl InvokeUiSession for FlutterHandler {
     }
 
     fn set_cursor_id(&self, id: String) {
-        self.push_event("cursor_id", &[("id", &id.to_string())], &[]);
+        let session_id = self.session_handlers.read().unwrap().keys().next().copied();
+        let kind = session_id.and_then(|session_id| {
+            let session = sessions::get_session_by_session_id(&session_id)?;
+            let id = id.parse::<u64>().ok()?;
+            let shapes = session.cursor_shapes.read().unwrap();
+            shapes.get(&id).map(|shape| shape.standard_kind.clone())
+        }).unwrap_or_default();
+        self.push_event("cursor_id", &[("id", &id), ("standard_kind", &kind)], &[]);
     }
 
     fn set_cursor_position(&self, cp: CursorPosition) {

@@ -1970,9 +1970,9 @@ pub fn session_send_pointer(session_id: SessionID, msg: String) {
 ///
 /// **Deactivation Markers are Local-Only:**
 /// Deactivation markers (`relative_mouse_mode: "0"`) are NEVER forwarded to the server.
-/// They are handled entirely on the client side to reset local UI state (cursor visibility,
-/// pointer lock, etc.). The server does not rely on deactivation markers and should not
-/// expect to receive them.
+/// They reset the local mode and, when requested, restore the configured cursor-position
+/// subscription. The server does not rely on deactivation markers and should not expect
+/// to receive them.
 ///
 /// **Contract (Flutter side MUST adhere to):**
 /// 1. `relative_mouse_mode` field is ONLY present on activation/deactivation marker messages,
@@ -1997,6 +1997,9 @@ pub fn session_send_mouse(session_id: SessionID, msg: String) {
             // The server does not track mode deactivation; it simply stops receiving
             // relative move events when the client exits relative mouse mode.
             if !active {
+                if m.contains_key("request_cursor_position") {
+                    flutter::request_relative_cursor_position(session_id, false);
+                }
                 #[cfg(not(any(target_os = "android", target_os = "ios")))]
                 crate::keyboard::set_relative_mouse_mode_state(false);
                 return;
@@ -2047,6 +2050,9 @@ pub fn session_send_mouse(session_id: SessionID, msg: String) {
             // All validation passed - marker will be forwarded as a no-op relative move.
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             crate::keyboard::set_relative_mouse_mode_state(true);
+            if m.contains_key("request_cursor_position") {
+                flutter::request_relative_cursor_position(session_id, true);
+            }
         }
 
         let alt = m.get("alt").is_some();

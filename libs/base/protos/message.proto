@@ -323,6 +323,7 @@ message CursorData {
   int32 width = 4;
   int32 height = 5;
   bytes colors = 6;
+  string standard_kind = 7;
 }
 
 message CursorPosition {

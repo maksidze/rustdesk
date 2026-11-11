@@ -140,6 +140,7 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
           children: [
             _RelativeMouseModeHint(tabController: tabController),
             const AddButton(),
+            if (isWindows) const AlwaysOnTopButton(),
           ],
         ),
         selectedBorderColor: MyTheme.accent,

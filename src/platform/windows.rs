@@ -254,6 +254,47 @@ impl Drop for IconInfo {
 
 // https://github.com/TurboVNC/tightvnc/blob/a235bae328c12fd1c3aed6f3f034a37a6ffbbd22/vnc_winsrc/winvnc/vncEncoder.cpp
 // https://github.com/TigerVNC/tigervnc/blob/master/win/rfb_win32/DeviceFrameBuffer.cxx
+fn standard_cursor_kind(hcursor: u64) -> &'static str {
+    unsafe {
+        for (resource, kind) in [
+            (IDC_IBEAM, "text"),
+            (IDC_SIZEWE, "resizeLeftRight"),
+            (IDC_SIZENS, "resizeUpDown"),
+            (IDC_SIZENWSE, "resizeUpLeftDownRight"),
+            (IDC_SIZENESW, "resizeUpRightDownLeft"),
+            (IDC_SIZEALL, "move"),
+        ] {
+            if LoadCursorW(std::ptr::null_mut(), resource) == hcursor as _ {
+                return kind;
+            }
+        }
+    }
+    "basic"
+}
+
+#[cfg(test)]
+mod standard_cursor_tests {
+    use super::*;
+
+    #[test]
+    fn standard_cursor_roles_are_preserved() {
+        unsafe {
+            for (resource, expected) in [
+                (IDC_ARROW, "basic"), (IDC_IBEAM, "text"),
+                (IDC_SIZEWE, "resizeLeftRight"), (IDC_SIZENS, "resizeUpDown"),
+                (IDC_SIZENWSE, "resizeUpLeftDownRight"),
+                (IDC_SIZENESW, "resizeUpRightDownLeft"),
+                (IDC_SIZEALL, "move"),
+            ] {
+                let cursor = LoadCursorW(std::ptr::null_mut(), resource);
+                assert!(!cursor.is_null());
+                assert_eq!(standard_cursor_kind(cursor as u64), expected);
+            }
+            assert_eq!(standard_cursor_kind(1), "basic");
+        }
+    }
+}
+
 pub fn get_cursor_data(hcursor: u64) -> ResultType<CursorData> {
     unsafe {
         let mut ii = IconInfo::new(hcursor as _)?;
@@ -322,6 +363,7 @@ pub fn get_cursor_data(hcursor: u64) -> ResultType<CursorData> {
 
         Ok(CursorData {
             id: hcursor,
+            standard_kind: standard_cursor_kind(hcursor).to_owned(),
             colors: cbits.into(),
             hotx: ii.0.xHotspot as _,
             hoty: ii.0.yHotspot as _,

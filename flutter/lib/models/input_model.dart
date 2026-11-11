@@ -474,6 +474,7 @@ class InputModel {
 
   // Relative mouse mode (for games/3D apps).
   final relativeMouseMode = false.obs;
+  final showRelativeMouseCursor = true.obs;
   late final RelativeMouseModel _relativeMouse;
   // Callback to cancel external throttle timer when relative mouse mode is disabled.
   VoidCallback? onRelativeMouseModeDisabled;
@@ -1526,6 +1527,10 @@ class InputModel {
 
   /// Get the current image widget size (for comparison to avoid unnecessary updates).
   Size? get imageWidgetSize => _relativeMouse.imageWidgetSize;
+
+  void updateWindowsPointerRegion(Offset origin) {
+    _relativeMouse.updateWindowsPointerRegion(origin);
+  }
 
   /// Update the image widget size for center calculation.
   void updateImageWidgetSize(Size size) {

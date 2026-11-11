@@ -18,6 +18,7 @@
 #include <memory>
 
 #include "win32_desktop.h"
+#include "desktop_controls.h"
 
 namespace {
 
@@ -103,6 +104,7 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  RegisterDesktopControls(flutter_controller_->engine());
 
   flutter::MethodChannel<> channel(
     flutter_controller_->engine()->messenger(),
@@ -149,6 +151,7 @@ bool FlutterWindow::OnCreate() {
     auto *flutter_view_controller =
         reinterpret_cast<flutter::FlutterViewController *>(controller);
     auto *registry = flutter_view_controller->engine();
+    RegisterDesktopControls(registry);
     TextureRgbaRendererPluginCApiRegisterWithRegistrar(
         registry->GetRegistrarForPlugin("TextureRgbaRendererPlugin"));
     FlutterGpuTextureRendererPluginCApiRegisterWithRegistrar(
